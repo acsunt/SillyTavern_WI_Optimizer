@@ -36,7 +36,7 @@ jobs:
         
         $cdnScript = @'
         (async function() {
-            const REPO = 'acsunt/SillyTavern_World_Info_Optimizer';
+            const REPO = 'acsunt/SillyTavern_WI_Optimizer';
             const RELEASE_API = 'https://api.github.com/repos/' + REPO + '/releases/latest';
             const PLUGIN_ID = '0266db8e-add9-49c0-bfca-3b237bbb1eaf';
             const PLUGIN_NAME = '世界书&正则管理器';
