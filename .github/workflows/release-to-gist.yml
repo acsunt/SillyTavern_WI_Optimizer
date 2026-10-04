@@ -1,0 +1,88 @@
+name: Release to Gist
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号 (例如: v3.4.1)'
+        required: true
+        type: string
+
+jobs:
+  build-and-upload:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: Checkout code
+        uses: checkout@v4
+        
+      - name: Build bundles
+        shell: powershell
+        run: |
+          Write-Host "开始构建..."
+          .\build.ps1
+          
+      - name: Get version
+        id: version
+        shell: powershell
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $version = "${{ github.event.inputs.version }}"
+          } else {
+            $version = "${{ github.ref_name }}"
+          }
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Version: $version"
+          
+      - name: Upload to Gist
+        shell: powershell
+        env:
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $gistId = $env:GIST_ID
+          $token = $env:GITHUB_TOKEN
+          
+          # 读取文件内容
+          $bundleJs = Get-Content -Path "dist\bundle.js" -Raw -Encoding UTF8
+          $bundleJson = Get-Content -Path "dist\bundle.json" -Raw -Encoding UTF8
+          $bundleCdn = Get-Content -Path "dist\bundle_cdn.json" -Raw -Encoding UTF8
+          
+          # 构建 Gist 更新请求
+          $body = @{
+            description = "世界书&正则管理器 - SillyTavern 插件 ($version)"
+            files = @{
+              "bundle.js" = @{
+                content = $bundleJs
+              }
+              "bundle.json" = @{
+                content = $bundleJson
+              }
+              "bundle_cdn.json" = @{
+                content = $bundleCdn
+              }
+              "VERSION.txt" = @{
+                content = $version
+              }
+            }
+          } | ConvertTo-Json -Depth 10
+          
+          # 更新 Gist
+          $headers = @{
+            "Authorization" = "token $token"
+            "Accept" = "application/vnd.github.v3+json"
+          }
+          
+          $response = Invoke-RestMethod -Uri "https://api.github.com/gists/$gistId" `
+            -Method PATCH `
+            -Headers $headers `
+            -Body $body `
+            -ContentType "application/json"
+          
+          Write-Host "✅ 已上传到 Gist: $($response.html_url)"
+          Write-Host "📦 版本: $version"
