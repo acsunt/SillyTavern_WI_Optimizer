@@ -33,48 +33,49 @@ jobs:
         $bundleContent = Get-Content "dist/bundle.json" -Raw -Encoding UTF8 | ConvertFrom-Json
         $version = "${{ github.event.inputs.version }}"
         
-        # 创建自动更新版本
+        $cdnScript = @'
+        (async function() {
+            const CDN_URL = 'https://cdn.jsdelivr.net/gh/acsunt/SillyTavern_World_Info_Optimizer@main/dist/bundle.js';
+            const VERSION_URL = 'https://api.github.com/repos/acsunt/SillyTavern_World_Info_Optimizer/releases/latest';
+            const PLUGIN_ID = '0266db8e-add9-49c0-bfca-3b237bbb1eaf';
+            const PLUGIN_NAME = '世界书&正则管理器';
+            
+            console.log('[世界书管理器] 开始加载...');
+            
+            try {
+                const versionResp = await fetch(VERSION_URL);
+                const versionData = await versionResp.json();
+                const latestVersion = versionData.tag_name || 'unknown';
+                
+                console.log('[世界书管理器] 最新版本:', latestVersion);
+                
+                const response = await fetch(CDN_URL + '?t=' + Date.now());
+                if (!response.ok) throw new Error('加载失败: ' + response.status);
+                
+                const code = await response.text();
+                eval(code);
+                
+                console.log('[世界书管理器] 加载成功');
+                
+                toastr.success('版本: ' + latestVersion, PLUGIN_NAME + ' 已加载', {
+                    timeOut: 3000,
+                    positionClass: 'toast-top-right'
+                });
+                
+            } catch (error) {
+                console.error('[世界书管理器] 加载失败:', error);
+                toastr.error('加载失败: ' + error.message, PLUGIN_NAME, {
+                    timeOut: 5000,
+                    positionClass: 'toast-top-right'
+                });
+            }
+        })();
+        '@
+        
         $cdnBundle = @{
           id = $bundleContent.id
           name = $bundleContent.name + " (自动更新)"
-          content = @"
-(async function() {
-    const CDN_URL = 'https://cdn.jsdelivr.net/gh/acsunt/SillyTavern_World_Info_Optimizer@main/dist/bundle.js';
-    const VERSION_URL = 'https://api.github.com/repos/acsunt/SillyTavern_World_Info_Optimizer/releases/latest';
-    const PLUGIN_ID = '$($bundleContent.id)';
-    const PLUGIN_NAME = '$($bundleContent.name)';
-    
-    console.log('[世界书管理器] 开始加载...');
-    
-    try {
-        const versionResp = await fetch(VERSION_URL);
-        const versionData = await versionResp.json();
-        const latestVersion = versionData.tag_name || 'unknown';
-        
-        console.log('[世界书管理器] 最新版本:', latestVersion);
-        
-        const response = await fetch(CDN_URL + '?t=' + Date.now());
-        if (!response.ok) throw new Error('加载失败: ' + response.status);
-        
-        const code = await response.text();
-        eval(code);
-        
-        console.log('[世界书管理器] 加载成功 ✓');
-        
-        toastr.success('版本: ' + latestVersion, PLUGIN_NAME + ' 已加载', {
-            timeOut: 3000,
-            positionClass: 'toast-top-right'
-        });
-        
-    } catch (error) {
-        console.error('[世界书管理器] 加载失败:', error);
-        toastr.error('加载失败: ' + error.message, PLUGIN_NAME, {
-            timeOut: 5000,
-            positionClass: 'toast-top-right'
-        });
-    }
-})();
-"@
+          content = $cdnScript
         } | ConvertTo-Json -Depth 10
         
         [System.IO.File]::WriteAllText("dist/bundle_cdn.json", $cdnBundle, [System.Text.Encoding]::UTF8)
