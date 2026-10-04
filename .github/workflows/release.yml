@@ -1,0 +1,147 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # 当推送 v 开头的标签时触发，如 v3.3, v3.4
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Build bundle.json
+      shell: pwsh
+      run: |
+        .\build.ps1
+        
+    - name: Create CDN version with auto-update
+      shell: pwsh
+      run: |
+        $bundleContent = Get-Content "dist/bundle.json" -Raw -Encoding UTF8 | ConvertFrom-Json
+        
+        # 获取版本号（从 tag 或使用默认值）
+        $version = if ($env:GITHUB_REF -match 'refs/tags/(.*)') { 
+          $matches[1] 
+        } else { 
+          "dev-$(Get-Date -Format 'yyyyMMdd')" 
+        }
+        
+        # 创建自动更新版本
+        $cdnBundle = @{
+          id = $bundleContent.id
+          name = $bundleContent.name + " (自动更新)"
+          content = @"
+(async function() {
+    const CDN_URL = 'https://cdn.jsdelivr.net/gh/acsunt/SillyTavern_World_Info_Optimizer@main/dist/bundle.js';
+    const VERSION_URL = 'https://api.github.com/repos/acsunt/SillyTavern_World_Info_Optimizer/releases/latest';
+    const PLUGIN_ID = '$($bundleContent.id)';
+    const PLUGIN_NAME = '$($bundleContent.name)';
+    
+    console.log('[世界书管理器] 开始加载...');
+    
+    try {
+        // 获取最新版本信息
+        const versionResp = await fetch(VERSION_URL);
+        const versionData = await versionResp.json();
+        const latestVersion = versionData.tag_name || 'unknown';
+        
+        console.log('[世界书管理器] 最新版本:', latestVersion);
+        
+        // 加载最新代码
+        const response = await fetch(CDN_URL + '?t=' + Date.now());
+        if (!response.ok) throw new Error('加载失败: ' + response.status);
+        
+        const code = await response.text();
+        
+        // 执行代码
+        eval(code);
+        
+        console.log('[世界书管理器] 加载成功 ✓');
+        
+        // 显示版本信息
+        toastr.success('版本: ' + latestVersion, PLUGIN_NAME + ' 已加载', {
+            timeOut: 3000,
+            positionClass: 'toast-top-right'
+        });
+        
+    } catch (error) {
+        console.error('[世界书管理器] 加载失败:', error);
+        toastr.error('加载失败: ' + error.message, PLUGIN_NAME, {
+            timeOut: 5000,
+            positionClass: 'toast-top-right'
+        });
+    }
+})();
+"@
+        } | ConvertTo-Json -Depth 10
+        
+        [System.IO.File]::WriteAllText("dist/bundle_cdn.json", $cdnBundle, [System.Text.Encoding]::UTF8)
+        
+        Write-Host "✓ 已创建 CDN 自动更新版本" -ForegroundColor Green
+        
+    - name: Extract bundle.js from bundle.json
+      shell: pwsh
+      run: |
+        $bundle = Get-Content "dist/bundle.json" -Raw -Encoding UTF8 | ConvertFrom-Json
+        $jsContent = $bundle.content
+        
+        # 将转义的换行符还原
+        $jsContent = $jsContent -replace '\\n', "`n"
+        $jsContent = $jsContent -replace '\\t', "`t"
+        $jsContent = $jsContent -replace '\\"', '"'
+        
+        [System.IO.File]::WriteAllText("dist/bundle.js", $jsContent, [System.Text.Encoding]::UTF8)
+        Write-Host "✓ 已提取 bundle.js" -ForegroundColor Green
+        
+    - name: Get version
+      id: get_version
+      shell: pwsh
+      run: |
+        $version = if ($env:GITHUB_REF -match 'refs/tags/(.*)') { 
+          $matches[1] 
+        } else { 
+          "dev-$(Get-Date -Format 'yyyyMMdd-HHmmss')" 
+        }
+        echo "version=$version" >> $env:GITHUB_OUTPUT
+        echo "版本: $version"
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          dist/bundle.json
+          dist/bundle_cdn.json
+          dist/bundle.js
+        body: |
+          ## 📦 SillyTavern 世界书管理器 ${{ steps.get_version.outputs.version }}
+          
+          ### 安装方法
+          
+          **标准版本（bundle.json）**：
+          1. 下载 `bundle.json`
+          2. 在 SillyTavern 的 JS-Slash-Runner 扩展中导入
+          3. 激活脚本并刷新页面
+          
+          **自动更新版本（bundle_cdn.json）**：
+          1. 下载 `bundle_cdn.json`
+          2. 在 SillyTavern 的 JS-Slash-Runner 扩展中导入
+          3. 激活脚本并刷新页面
+          4. 每次启动 SillyTavern 时会自动检查并加载最新版本
+          
+          ### 文件说明
+          - `bundle.json` - 完整打包版本（推荐）
+          - `bundle_cdn.json` - CDN 自动更新版本
+          - `bundle.js` - 未打包的 JavaScript 源码（供开发者使用）
+          
+          ---
+          
+          完整功能说明请查看 [README](https://github.com/acsunt/SillyTavern_World_Info_Optimizer/blob/main/README.md)
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
