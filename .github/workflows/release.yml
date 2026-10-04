@@ -33,25 +33,44 @@ jobs:
         
         $cdnScript = @'
         (async function() {
-            const CDN_URL = 'https://cdn.jsdelivr.net/gh/acsunt/SillyTavern_World_Info_Optimizer@main/dist/bundle.js';
-            const VERSION_URL = 'https://api.github.com/repos/acsunt/SillyTavern_World_Info_Optimizer/releases/latest';
+            const REPO = 'acsunt/SillyTavern_World_Info_Optimizer';
+            const RELEASE_API = 'https://api.github.com/repos/' + REPO + '/releases/latest';
             const PLUGIN_ID = '0266db8e-add9-49c0-bfca-3b237bbb1eaf';
             const PLUGIN_NAME = '世界书&正则管理器';
             
             console.log('[世界书管理器] 开始加载...');
             
             try {
-                const versionResp = await fetch(VERSION_URL);
-                const versionData = await versionResp.json();
-                const latestVersion = versionData.tag_name || 'unknown';
+                // 获取最新 Release 信息
+                const releaseResp = await fetch(RELEASE_API);
+                if (!releaseResp.ok) throw new Error('获取版本信息失败: ' + releaseResp.status);
+                
+                const releaseData = await releaseResp.json();
+                const latestVersion = releaseData.tag_name || 'unknown';
                 
                 console.log('[世界书管理器] 最新版本:', latestVersion);
                 
-                const response = await fetch(CDN_URL + '?t=' + Date.now());
-                if (!response.ok) throw new Error('加载失败: ' + response.status);
+                // 从 Release 资源中找到 bundle.js
+                const asset = releaseData.assets.find(a => a.name === 'bundle.js');
+                if (!asset) throw new Error('未找到 bundle.js 文件');
                 
-                const code = await response.text();
-                eval(code);
+                // 从 jsDelivr CDN 加载（使用版本号，永久缓存但确保是正确版本）
+                const cdnUrl = 'https://cdn.jsdelivr.net/gh/' + REPO + '@' + latestVersion + '/dist/bundle.js';
+                
+                console.log('[世界书管理器] 加载地址:', cdnUrl);
+                
+                const response = await fetch(cdnUrl);
+                if (!response.ok) {
+                    // CDN 失败则尝试从 GitHub Release 直接下载
+                    console.warn('[世界书管理器] CDN 加载失败，尝试直接下载');
+                    const directResp = await fetch(asset.browser_download_url);
+                    if (!directResp.ok) throw new Error('加载失败: ' + directResp.status);
+                    const code = await directResp.text();
+                    eval(code);
+                } else {
+                    const code = await response.text();
+                    eval(code);
+                }
                 
                 console.log('[世界书管理器] 加载成功');
                 
