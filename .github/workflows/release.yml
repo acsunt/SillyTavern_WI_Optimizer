@@ -9,6 +9,7 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 15
     
     steps:
     - name: Checkout code
@@ -106,7 +107,7 @@ jobs:
         echo "版本: $version"
         
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         files: |
           dist/bundle.json
